@@ -1,10 +1,8 @@
-"""sharepointsites tap class."""
-
 import json
 import argparse
-from typing import List
 
 from tap_sharepoint.file_stream import FilesStream
+
 
 def load_json(path):
     with open(path) as f:
@@ -39,8 +37,5 @@ def main():
     files_stream.sync()
 
 
-
-
 if __name__ == "__main__":
     main()
-   

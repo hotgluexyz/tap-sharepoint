@@ -1,13 +1,10 @@
 """Stream type classes for tap-sharepointsites."""
 
-import datetime
 import os
-import typing as t
-from functools import cached_property
 import logging
+from datetime import datetime
 
 import requests
-from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
 from tap_sharepoint.auth import TapSharepointAuth
 
 
@@ -17,7 +14,10 @@ class FilesStream():
     def __init__(self, config, state, config_file_path):
         self.config = config
         self.state = state
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("tap-sharepoint")
+        logging.basicConfig(
+            level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
         self.auth = TapSharepointAuth(config, config_file_path)
 
         if not config.get("site_name"):
@@ -25,7 +25,7 @@ class FilesStream():
         if not config.get("tenant_name"):
             raise ValueError("tenant_name is required")
         
-        self.site_id = self.get_site_id(config["site_name"])
+        self.site_id = self.get_site_id()
         if not config.get("drive_name"):
             raise ValueError("drive_name is required")
         
@@ -36,22 +36,39 @@ class FilesStream():
         self.target_dir = config["target_dir"]
 
     def make_request(self, url, method="GET", params=None):
-        self.auth.update_access_token()
+        self.logger.info(f"Making request to {url}")
         headers = {
-            "Authorization": f"Bearer {self.auth.access_token}",
+            "Authorization": f"Bearer {self.auth.get_access_token()}",
             "Content-Type": "application/json",
         }
         response = requests.request(method, url, headers=headers, params=params)
         return response
     
+    def list_files(self, path):
+        if path:
+            url = f"https://graph.microsoft.com/v1.0/drives/{self.drive_id}/root:/{path}:/children"
+        else:
+            url = f"https://graph.microsoft.com/v1.0/drives/{self.drive_id}/root/children"
+        response = self.make_request(url)
+        return response.json()["value"]
+    
+    def raise_for_status(self, response):
+        if response.status_code == 404:
+            raise ValueError(response.json().get("message", f"Something went wrong with the request: {response.text}"))
+        
+        if response.status_code == 400:
+            raise ValueError(response.json().get("message", f"Something went wrong with the request: {response.text}"))
+    
     def get_site_id(self):
         url = f"https://graph.microsoft.com/v1.0/sites/{self.config['tenant_name']}.sharepoint.com:/sites/{self.config['site_name']}"
         response = self.make_request(url)
+        self.raise_for_status(response)
         return response.json()["id"]
 
     def get_drive_id(self, site_id, drive_name):
         url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives"
         response = self.make_request(url)
+        self.raise_for_status(response)
         drives = response.json()["value"]
         drive = next((drive for drive in drives if drive["name"] == drive_name), None)
         if not drive:
@@ -61,11 +78,13 @@ class FilesStream():
     def get_file_metadata(self, file_id):
         url = f"https://graph.microsoft.com/v1.0/drives/{self.drive_id}/items/{file_id}"
         response = self.make_request(url)
+        self.raise_for_status(response)
         return response.json()
     
     def download_file(self, file_id, file_name):
         url = f"https://graph.microsoft.com/v1.0/drives/{self.drive_id}/items/{file_id}/content"
         response = self.make_request(url, method="GET")
+        self.raise_for_status(response)
         with open(os.path.join(self.target_dir, file_name), "wb") as f:
             f.write(response.content)
 
@@ -74,12 +93,27 @@ class FilesStream():
             file_metadata = self.get_file_metadata(file["id"])
             bookmark = self.get_bookmark(file["name"])
 
-            if bookmark is None or file_metadata["lastModifiedDateTime"] > bookmark:
+            if self.file_has_been_modified(file_metadata, bookmark):
+                self.logger.info(f"File {file['name']} is modified - fetching new version")
                 self.download_file(file["id"], file["name"])
             else:
                 self.logger.info(f"File {file['name']} is up to date")
 
     def get_bookmark(self, file_name):
         return self.config.get("start_date", None)
+    
+    def file_has_been_modified(self, file_metadata, bookmark):
+        if not bookmark:
+            return True
+        
+        # Handle datetime parsing with flexible format
+        last_modified_str = file_metadata["lastModifiedDateTime"]
+        
+        # Parse datetime without microseconds since SharePoint returns format like '2025-07-14T20:49:42Z'
+        parsed_last_modified_date = datetime.strptime(last_modified_str, "%Y-%m-%dT%H:%M:%SZ")
+
+        parsed_bookmark = datetime.strptime(bookmark, "%Y-%m-%dT%H:%M:%SZ")
+        
+        return parsed_last_modified_date > parsed_bookmark
     
     

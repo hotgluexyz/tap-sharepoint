@@ -18,5 +18,5 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 # CLI declaration
-tap-sharepoint = 'tap_sharepoint.tap:Tapsharepoint.main'
+tap-sharepoint = 'tap_sharepoint.tap:main'
 

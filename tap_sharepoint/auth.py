@@ -3,7 +3,6 @@
 
 import json
 import requests
-from typing import Optional
 from datetime import datetime
 import logging
 
@@ -11,13 +10,18 @@ import logging
 class TapSharepointAuth():
     """Authenticator class for TapSharepoint."""
 
+    auth_endpoint = "https://login.microsoftonline.com/common/oauth2/token"
+    last_refreshed = None
+    
     def __init__(
         self,
         config: dict,
         config_file_path: str
     ) -> None:
         self.config = config
-        self.logger = logging.getLogger(__name__)
+        self.access_token = config.get("access_token", None)
+        self.expires_in = config.get("expires_in", None)
+        self.logger = logging.getLogger("tap-sharepoint")
         self.config_file_path = config_file_path
 
     @property
@@ -28,7 +32,6 @@ class TapSharepointAuth():
             # 'resource': 'https://login.microsoftonline.com/common/oauth2/token',
             "client_id": self.config["client_id"],
             "client_secret": self.config["client_secret"],
-            "redirect_uri": self.config["redirect_uri"],
             "refresh_token": self.config["refresh_token"],
             "grant_type": "refresh_token",
         }
@@ -59,7 +62,7 @@ class TapSharepointAuth():
             RuntimeError: When OAuth login fails.
         """
         request_time = datetime.now()
-        auth_request_payload = self.oauth_request_payload
+        auth_request_payload = self.oauth_request_body
         token_response = requests.post(self.auth_endpoint, data=auth_request_payload)
         try:
             token_response.raise_for_status()
@@ -85,3 +88,8 @@ class TapSharepointAuth():
 
         with open(self.config_file_path, "w") as outfile:
             json.dump(self.config, outfile, indent=4)
+
+    def get_access_token(self):
+        if not self.is_token_valid():
+            self.update_access_token()
+        return self.access_token
