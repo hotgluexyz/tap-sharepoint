@@ -143,3 +143,6 @@ config.json
 ._*
 .vscode/*
 .devcontainer/*
+.venv
+.vscode
+.DS_Store
