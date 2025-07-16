@@ -1,5 +1,6 @@
 """Stream type classes for tap-sharepointsites."""
 
+import json
 import os
 import logging
 from datetime import datetime
@@ -11,9 +12,10 @@ from tap_sharepoint.auth import TapSharepointAuth
 class FilesStream():
     """Define custom stream."""
 
-    def __init__(self, config, state, config_file_path):
+    def __init__(self, config, state, config_file_path, state_file_path):
         self.config = config
         self.state = state
+        self.state_file_path = state_file_path
         self.logger = logging.getLogger("tap-sharepoint")
         logging.basicConfig(
             level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -91,16 +93,27 @@ class FilesStream():
     def sync(self):
         for file in self.config["files"]:
             file_metadata = self.get_file_metadata(file["id"])
-            bookmark = self.get_bookmark(file["name"])
+            bookmark = self.get_bookmark(file["id"])
 
             if self.file_has_been_modified(file_metadata, bookmark):
                 self.logger.info(f"File {file['name']} is modified - fetching new version")
                 self.download_file(file["id"], file["name"])
+                self.update_bookmark(file["id"], {
+                    "replication_key_value": file_metadata["lastModifiedDateTime"],
+                    "replication_key": "lastModifiedDateTime"
+                })
             else:
                 self.logger.info(f"File {file['name']} is up to date")
 
-    def get_bookmark(self, file_name):
-        return self.config.get("start_date", None)
+    def get_bookmark(self, file_id):
+        start_date = self.config.get("start_date", None)
+        return self.state.get("bookmarks", {}).get(file_id, {}).get("replication_key_value", None) or start_date
+        
+    def update_bookmark(self, file_id, bookmark):
+        if self.state_file_path:
+            self.state["bookmarks"][file_id] = bookmark
+            with open(self.state_file_path, "w") as f:
+                json.dump(self.state, f)
     
     def file_has_been_modified(self, file_metadata, bookmark):
         if not bookmark:
