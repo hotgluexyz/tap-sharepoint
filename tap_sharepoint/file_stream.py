@@ -46,9 +46,9 @@ class FilesStream():
         response = requests.request(method, url, headers=headers, params=params)
         return response
     
-    def list_files(self, path):
-        if path:
-            url = f"https://graph.microsoft.com/v1.0/drives/{self.drive_id}/root:/{path}:/children"
+    def list_files(self, folder_id):
+        if folder_id:
+            url = f"https://graph.microsoft.com/v1.0/drives/{self.drive_id}/items/{folder_id}/children"
         else:
             url = f"https://graph.microsoft.com/v1.0/drives/{self.drive_id}/root/children"
         response = self.make_request(url)
@@ -91,11 +91,19 @@ class FilesStream():
             f.write(response.content)
 
     def sync(self):
-        for file in self.config["files"]:
+        files_to_sync = self.config["files"]
+        for file in files_to_sync:
             file_metadata = self.get_file_metadata(file["id"])
             bookmark = self.get_bookmark(file["id"])
 
+            is_folder = file_metadata.get("folder")
+
             if self.file_has_been_modified(file_metadata, bookmark):
+                if is_folder:
+                    files_to_sync.extend(self.list_files(file["id"]))
+                    self.logger.info(f"Folder {file['name']} is modified - fetching new version")
+                    continue
+                
                 self.logger.info(f"File {file['name']} is modified - fetching new version")
                 self.download_file(file["id"], file["name"])
                 self.update_bookmark(file["id"], {
