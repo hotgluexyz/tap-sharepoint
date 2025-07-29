@@ -91,6 +91,7 @@ class FilesStream():
             f.write(response.content)
 
     def sync(self):
+        downloaded_files = set()
         files_to_sync = self.config["files"]
         for file in files_to_sync:
             file_metadata = self.get_file_metadata(file["id"])
@@ -98,7 +99,7 @@ class FilesStream():
 
             is_folder = file_metadata.get("folder")
 
-            if self.file_has_been_modified(file_metadata, bookmark):
+            if self.file_has_been_modified(file_metadata, bookmark) and file["id"] not in downloaded_files:
                 if is_folder:
                     files_to_sync.extend(self.list_files(file["id"]))
                     self.logger.info(f"Folder {file['name']} is modified - fetching new version")
