@@ -2,6 +2,8 @@
 
 `tap-sharepoint` is a Singer tap for Microsoft Sharepoint, build to be used with the Hotglue widget.
 
+`tap-sharepoint` can be run on [Hotglue](https://hotglue.com), an embedded integration platform for running ETL jobs.
+
 The tap is capable of downloading files from a given Sharepoint drive using OAuth credentials.
 
 ## Configuration
